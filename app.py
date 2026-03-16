@@ -20,6 +20,7 @@ merged = (
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.FLATLY],
+    suppress_callback_exceptions=True,
     title="Holiday Episodes Dashboard",
 )
 server = app.server  # expose for gunicorn
@@ -269,6 +270,9 @@ def render_page(pathname):
 @app.callback(Output("bar-chart", "figure"),
               Input("genre-select", "value"))
 def update_bar(selected_genres):
+    # Guard: callback can fire before dropdown has a value (multi-page layout)
+    if not selected_genres:
+        return go.Figure()
     df = (
         merged
         .dropna(subset=["main_genre", "num_votes", "year"])
@@ -334,6 +338,8 @@ def update_bar(selected_genres):
 @app.callback(Output("density-chart", "figure"),
               [Input("top-n", "value"), Input("colorscale", "value")])
 def update_density(top_n, colorscale):
+    if not top_n:
+        return go.Figure()
     df = merged.dropna(subset=["main_genre", "num_votes", "runtime_minutes", "average_rating"]).copy()
 
     # top genres by avg votes
