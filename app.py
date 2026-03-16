@@ -272,115 +272,209 @@ def render_page(pathname):
     Input("genre-select", "value")
 )
 def update_bar(selected_genres):
-    if not selected_genres:
-        return go.Figure()
+    try:
+        # -----------------------------
+        # 0) Basic checks
+        # -----------------------------
+        if selected_genres is None or len(selected_genres) == 0:
+            fig = go.Figure()
+            fig.update_layout(title="No genres selected.")
+            return fig
 
-    # --- Build long genre format directly from episodes ---
-    df = episodes.copy()
+        # -----------------------------
+        # 1) Start from episodes only
+        # -----------------------------
+        df = episodes.copy()
 
-    # keep only needed rows
-    df = df.dropna(subset=["genres", "num_votes", "year"]).copy()
-
-    # make sure numeric columns are numeric
-    df["year"] = pd.to_numeric(df["year"], errors="coerce")
-    df["num_votes"] = pd.to_numeric(df["num_votes"], errors="coerce")
-    df = df.dropna(subset=["year", "num_votes"])
-
-    # split comma-separated genres into separate rows
-    df["main_genre"] = df["genres"].str.split(",")
-    df = df.explode("main_genre")
-
-    # clean whitespace
-    df["main_genre"] = df["main_genre"].str.strip()
-
-    # remove empty genre values
-    df = df[df["main_genre"].notna() & (df["main_genre"] != "")]
-
-    # decade labels like 1940–1949
-    df["decade_start"] = (df["year"] // 10 * 10).astype(int)
-    df["decade"] = df["decade_start"].astype(str) + "–" + (df["decade_start"] + 9).astype(str)
-
-    # number of genres per episode
-    df["n_genres"] = df.groupby("tconst")["main_genre"].transform("count")
-
-    # split votes proportionally across all genres tagged to the episode
-    df["weighted_votes"] = df["num_votes"] / df["n_genres"]
-
-    # aggregate weighted votes by decade and genre
-    votes_decade = (
-        df.groupby(["decade", "main_genre"], as_index=False)["weighted_votes"]
-        .sum()
-    )
-
-    # total weighted votes per decade
-    votes_decade["decade_total"] = votes_decade.groupby("decade")["weighted_votes"].transform("sum")
-    votes_decade["proportion"] = votes_decade["weighted_votes"] / votes_decade["decade_total"]
-
-    # collapse non-selected genres into Other
-    votes_decade["genre_label"] = np.where(
-        votes_decade["main_genre"].isin(selected_genres),
-        votes_decade["main_genre"],
-        "Other"
-    )
-
-    agg = (
-        votes_decade.groupby(["decade", "genre_label"], as_index=False)["proportion"]
-        .sum()
-    )
-
-    # order decades properly
-    decade_order = sorted(
-        agg["decade"].unique(),
-        key=lambda x: int(x.split("–")[0])
-    )
-
-    genre_order = selected_genres + ["Other"]
-
-    color_map = {
-        "Family": "#2a9d8f",
-        "Drama": "#e76f51",
-        "Comedy": "#457b9d",
-        "Western": "#b08968",
-        "Sci-Fi": "#6d597a",
-        "Animation": "#f4a261",
-        "Other": "#cfcfcf"
-    }
-
-    fig = go.Figure()
-
-    for genre in genre_order:
-        sub = (
-            agg[agg["genre_label"] == genre]
-            .set_index("decade")
-            .reindex(decade_order, fill_value=0)
-        )
-
-        fig.add_trace(
-            go.Bar(
-                x=decade_order,
-                y=sub["proportion"] * 100,
-                name=genre,
-                marker_color=color_map.get(genre, "#999999"),
-                hovertemplate="<b>%{fullData.name}</b><br>Decade: %{x}<br>Share: %{y:.1f}%<extra></extra>"
+        # Debug: confirm expected columns exist
+        required_cols = ["tconst", "genres", "num_votes", "year"]
+        missing_cols = [c for c in required_cols if c not in df.columns]
+        if missing_cols:
+            fig = go.Figure()
+            fig.update_layout(
+                title=f"Missing columns in episodes: {missing_cols}"
             )
+            return fig
+
+        # -----------------------------
+        # 2) Clean data
+        # -----------------------------
+        df = df.dropna(subset=["genres", "num_votes", "year"]).copy()
+
+        df["year"] = pd.to_numeric(df["year"], errors="coerce")
+        df["num_votes"] = pd.to_numeric(df["num_votes"], errors="coerce")
+        df = df.dropna(subset=["year", "num_votes"])
+
+        if df.empty:
+            fig = go.Figure()
+            fig.update_layout(title="Data is empty after dropping NA and coercing year/num_votes.")
+            return fig
+
+        # -----------------------------
+        # 3) Split genres into long format
+        # -----------------------------
+        # Handles cases like "Comedy,Family"
+        df["main_genre"] = df["genres"].astype(str).str.split(",")
+
+        df = df.explode("main_genre")
+        df["main_genre"] = df["main_genre"].astype(str).str.strip()
+
+        df = df[df["main_genre"].notna() & (df["main_genre"] != "")]
+
+        if df.empty:
+            fig = go.Figure()
+            fig.update_layout(title="No rows left after exploding genres.")
+            return fig
+
+        # -----------------------------
+        # 4) Create decade
+        # -----------------------------
+        df["decade_start"] = (df["year"] // 10 * 10).astype(int)
+        df["decade"] = df["decade_start"].astype(str) + "-" + (df["decade_start"] + 9).astype(str)
+
+        # -----------------------------
+        # 5) Weight votes by number of genres per episode
+        # -----------------------------
+        df["n_genres"] = df.groupby("tconst")["main_genre"].transform("count")
+        df = df[df["n_genres"] > 0]
+
+        df["weighted_votes"] = df["num_votes"] / df["n_genres"]
+
+        if df["weighted_votes"].isna().all():
+            fig = go.Figure()
+            fig.update_layout(title="weighted_votes is entirely NA.")
+            return fig
+
+        # -----------------------------
+        # 6) Aggregate to decade x genre
+        # -----------------------------
+        votes_decade = (
+            df.groupby(["decade", "main_genre"], as_index=False)["weighted_votes"]
+            .sum()
         )
 
-    fig.update_layout(
-        barmode="stack",
-        title="Shifts in Holiday Episodes Genre Preferences by Decade",
-        xaxis_title="Decade",
-        yaxis_title="Proportion of total votes (%)",
-        yaxis=dict(range=[0, 100], ticksuffix="%"),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        legend_title="Genre",
-        margin=dict(t=60, b=80, l=70, r=30),
-    )
+        if votes_decade.empty:
+            fig = go.Figure()
+            fig.update_layout(title="votes_decade is empty after grouping.")
+            return fig
 
-    fig.update_xaxes(showgrid=True, gridcolor="#e5e5e5")
-    fig.update_yaxes(showgrid=True, gridcolor="#e5e5e5")
+        votes_decade["decade_total"] = votes_decade.groupby("decade")["weighted_votes"].transform("sum")
+        votes_decade = votes_decade[votes_decade["decade_total"] > 0]
 
-    return fig
+        votes_decade["proportion"] = votes_decade["weighted_votes"] / votes_decade["decade_total"]
+
+        if votes_decade.empty:
+            fig = go.Figure()
+            fig.update_layout(title="No rows left after computing proportions.")
+            return fig
+
+        # -----------------------------
+        # 7) Collapse non-selected genres into Other
+        # -----------------------------
+        votes_decade["genre_label"] = np.where(
+            votes_decade["main_genre"].isin(selected_genres),
+            votes_decade["main_genre"],
+            "Other"
+        )
+
+        agg = (
+            votes_decade.groupby(["decade", "genre_label"], as_index=False)["proportion"]
+            .sum()
+        )
+
+        if agg.empty:
+            fig = go.Figure()
+            fig.update_layout(title="agg is empty after collapsing into Other.")
+            return fig
+
+        # -----------------------------
+        # 8) Order decades
+        # -----------------------------
+        decade_order = sorted(
+            agg["decade"].unique(),
+            key=lambda x: int(x.split("-")[0])
+        )
+
+        genre_order = [g for g in selected_genres if g in agg["genre_label"].unique()]
+        if "Other" in agg["genre_label"].unique():
+            genre_order += ["Other"]
+
+        if len(genre_order) == 0:
+            fig = go.Figure()
+            fig.update_layout(
+                title="No matching selected genres found in data.",
+                annotations=[
+                    dict(
+                        text=f"Available genres sample: {sorted(df['main_genre'].dropna().unique())[:15]}",
+                        x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False
+                    )
+                ]
+            )
+            return fig
+
+        # -----------------------------
+        # 9) Colors
+        # -----------------------------
+        color_map = {
+            "Family": "#2a9d8f",
+            "Drama": "#e76f51",
+            "Comedy": "#457b9d",
+            "Western": "#b08968",
+            "Sci-Fi": "#6d597a",
+            "Animation": "#f4a261",
+            "Crime": "#8d99ae",
+            "Adventure": "#90be6d",
+            "Romance": "#f28482",
+            "Action": "#577590",
+            "Documentary": "#43aa8b",
+            "Other": "#cfcfcf"
+        }
+
+        # -----------------------------
+        # 10) Build figure
+        # -----------------------------
+        fig = go.Figure()
+
+        for genre in genre_order:
+            sub = (
+                agg[agg["genre_label"] == genre]
+                .set_index("decade")
+                .reindex(decade_order, fill_value=0)
+            )
+
+            fig.add_trace(
+                go.Bar(
+                    x=decade_order,
+                    y=sub["proportion"].values * 100,
+                    name=genre,
+                    marker_color=color_map.get(genre, "#999999"),
+                    hovertemplate="<b>%{fullData.name}</b><br>Decade: %{x}<br>Share: %{y:.1f}%<extra></extra>"
+                )
+            )
+
+        fig.update_layout(
+            barmode="stack",
+            title="Shifts in Holiday Episodes Genre Preferences by Decade",
+            xaxis_title="Decade",
+            yaxis_title="Proportion of total votes (%)",
+            yaxis=dict(range=[0, 100], ticksuffix="%"),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            legend_title="Genre",
+            margin=dict(t=70, b=80, l=70, r=30),
+        )
+
+        fig.update_xaxes(showgrid=True, gridcolor="#e5e5e5")
+        fig.update_yaxes(showgrid=True, gridcolor="#e5e5e5")
+
+        return fig
+
+    except Exception as e:
+        fig = go.Figure()
+        fig.update_layout(
+            title=f"Callback error: {type(e).__name__}: {str(e)}"
+        )
+        return fig
 
 
 @app.callback(Output("density-chart", "figure"),
