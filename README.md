@@ -1,4 +1,4 @@
-# 🎄 Holiday Episodes Dashboard
+# Holiday Episodes Dashboard
 
 Interactive Plotly Dash dashboard for the DSA2101 Holiday Episodes analysis.
 
@@ -15,18 +15,6 @@ pip install -r requirements.txt
 python app.py
 ```
 Visit http://127.0.0.1:8050
-
-## Deploy on Render.com (free)
-
-1. Push this folder to a **GitHub repo** (include the `data/` folder).
-2. Go to [render.com](https://render.com) → **New Web Service** → connect your repo.
-3. Settings:
-   - **Runtime**: Python 3
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:server`
-4. Click **Create Web Service** — done! 🎉
-
-> Render free tier spins down after 15 min of inactivity; first load may take ~30s.
 
 ## Deploy on Railway.app
 
