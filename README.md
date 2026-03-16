@@ -1,6 +1,6 @@
 # Holiday Episodes Dashboard
 
-Interactive Plotly Dash dashboard for the DSA2101 Holiday Episodes analysis.
+Interactive Plotly Dash dashboard for the DSA2101 Holiday Episodes analysis. (https://holiday-episodes-dashboard.onrender.com)
 
 ## Features
 - **Overview** – summary statistics & holiday-type breakdown
@@ -14,13 +14,6 @@ Interactive Plotly Dash dashboard for the DSA2101 Holiday Episodes analysis.
 pip install -r requirements.txt
 python app.py
 ```
-Visit http://127.0.0.1:8050
-
-## Deploy on Railway.app
-
-1. Push to GitHub.
-2. New project → Deploy from GitHub repo.
-3. Railway auto-detects Python. Set start command to `gunicorn app:server`.
 
 ## File Structure
 
