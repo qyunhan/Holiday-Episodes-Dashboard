@@ -15,6 +15,47 @@ merged = (
     .merge(genres_df, on="tconst", how="left")
     .rename(columns={"genres_x": "genre_combi", "genres_y": "main_genre"})
 )
+def test_vote_share_pipeline():
+    df = episodes.copy()
+
+    print("Initial rows:", len(df))
+    print("Columns:", df.columns.tolist())
+
+   # Step 1 clean
+    df = df.dropna(subset=["genres", "num_votes", "year"]).copy()
+    print("After dropna:", len(df))
+
+    df["year"] = pd.to_numeric(df["year"], errors="coerce")
+    df["num_votes"] = pd.to_numeric(df["num_votes"], errors="coerce")
+    df = df.dropna(subset=["year", "num_votes"])
+    print("After numeric conversion:", len(df))
+
+    # Step 2 explode genres
+    df["main_genre"] = df["genres"].astype(str).str.split(",")
+    df = df.explode("main_genre")
+
+    df["main_genre"] = df["main_genre"].str.strip()
+
+    print("Unique genres:", sorted(df["main_genre"].unique())[:20])
+
+    # Step 3 decade
+    df["decade_start"] = (df["year"] // 10 * 10).astype(int)
+    df["decade"] = df["decade_start"].astype(str) + "-" + (df["decade_start"] + 9).astype(str)
+
+    print("Decades:", sorted(df["decade"].unique()))
+
+    # Step 4 weighted votes
+    df["n_genres"] = df.groupby("tconst")["main_genre"].transform("count")
+    df["weighted_votes"] = df["num_votes"] / df["n_genres"]
+
+    # Step 5 aggregation
+    votes_decade = (
+        df.groupby(["decade", "main_genre"])["weighted_votes"]
+        .sum()
+        .reset_index()
+    )
+
+    return votes_decade
 
 # ── App layout ────────────────────────────────────────────────────────────────
 app = Dash(
