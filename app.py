@@ -412,10 +412,9 @@ def update_bar(selected_genres):
         # -----------------------------
         # 7) Collapse non-selected genres into Other
         # -----------------------------
-        votes_decade["genre_label"] = np.where(
+        votes_decade["genre_label"] = votes_decade["main_genre"].where(
             votes_decade["main_genre"].isin(selected_genres),
-            votes_decade["main_genre"],
-            "Other"
+            other="Other"
         )
 
         agg = (
@@ -477,17 +476,17 @@ def update_bar(selected_genres):
         fig = go.Figure()
 
         for genre in genre_order:
-            sub = (
-                agg[agg["genre_label"] == genre]
-                .set_index("decade")
-                .reindex(decade_order, fill_value=0)
+            proportion_by_decade = (
+                agg.loc[agg["genre_label"] == genre, ["decade", "proportion"]]
+                .set_index("decade")["proportion"]
+                .reindex(decade_order, fill_value=0.0)
             )
 
             fig.add_trace(
                 go.Bar(
-                    x=decade_order,
-                    y=sub["proportion"].values * 100,
-                    name=genre,
+                    x=list(decade_order),
+                    y=(proportion_by_decade.values * 100).tolist(),
+                    name=str(genre),
                     marker_color=color_map.get(genre, "#999999"),
                     hovertemplate="<b>%{fullData.name}</b><br>Decade: %{x}<br>Share: %{y:.1f}%<extra></extra>"
                 )
@@ -610,5 +609,10 @@ def update_density(top_n, colorscale):
     return fig
 
 
+
+
 if __name__ == "__main__":
+    debug_df = test_vote_share_pipeline()
+    print("\nFinal dataframe shape:", debug_df.shape)
+
     app.run(debug=True)
